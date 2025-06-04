@@ -11,20 +11,44 @@ DATABASE_NAME = 'dds_assgn1'
 def getopenconnection(user='postgres', password='1234', dbname='postgres'):
     return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
 
-
 def loadratings(ratingstablename, ratingsfilepath, openconnection): 
     """
     Function to load data in @ratingsfilepath file to a table called @ratingstablename.
     """
-    create_db(DATABASE_NAME)
+    # exmple
+    # create_db(DATABASE_NAME)
+    # con = openconnection
+    # cur = con.cursor()
+    # cur.execute("create table " + ratingstablename + "(userid integer,movieid integer, rating float);")
+    # cur.copy_from(open(ratingsfilepath),ratingstablename,sep=':')
+
+    # cur.close()
+    # con.commit()
+    create_db(DATABASE_NAME)  # Assuming this creates DB if needed
     con = openconnection
     cur = con.cursor()
-    cur.execute("create table " + ratingstablename + "(userid integer, extra1 char, movieid integer, extra2 char, rating float, extra3 char, timestamp bigint);")
+
+    # 1. Create partitioned table (no trailing comma)
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {ratingstablename} (
+            userid INTEGER,
+            extra1 char,
+            movieid INTEGER,
+            extra2 char,
+            rating FLOAT,
+            extra3 char, 
+            timestamp bigint
+        ) PARTITION BY RANGE (userid);
+    """)
+    # 2. Create partitions (example: partition userid 0-1000000)
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {ratingstablename}_p0 PARTITION OF {ratingstablename}
+        FOR VALUES FROM (0) TO (1000000);
+    """)
     cur.copy_from(open(ratingsfilepath),ratingstablename,sep=':')
     cur.execute("alter table " + ratingstablename + " drop column extra1, drop column extra2, drop column extra3, drop column timestamp;")
-    cur.close()
     con.commit()
-
+    cur.close()
 def rangepartition(ratingstablename, numberofpartitions, openconnection):
     """
     Function to create partitions of main table based on range of ratings.

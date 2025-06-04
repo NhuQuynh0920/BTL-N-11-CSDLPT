@@ -1,4 +1,5 @@
-#
+# run 
+# python3 Assignment1Tester.py
 # Tester for the assignement1
 #
 DATABASE_NAME = 'dds_assgn1'
@@ -10,8 +11,8 @@ RROBIN_TABLE_PREFIX = 'rrobin_part'
 USER_ID_COLNAME = 'userid'
 MOVIE_ID_COLNAME = 'movieid'
 RATING_COLNAME = 'rating'
-INPUT_FILE_PATH = 'test_data.dat'
-ACTUAL_ROWS_IN_INPUT_FILE = 20  # Number of lines in the input file
+INPUT_FILE_PATH = 'ratings.dat'
+ACTUAL_ROWS_IN_INPUT_FILE = 10000000  # Number of lines in the input file
 
 import psycopg2
 import traceback
@@ -33,37 +34,37 @@ if __name__ == '__main__':
             else:
                 print("loadratings function fail!")
 
-            [result, e] = testHelper.testrangepartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
-            if result :
-                print("rangepartition function pass!")
-            else:
-                print("rangepartition function fail!")
+            # [result, e] = testHelper.testrangepartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
+            # if result :
+            #     print("rangepartition function pass!")
+            # else:
+            #     print("rangepartition function fail!")
 
-            # ALERT:: Use only one at a time i.e. uncomment only one line at a time and run the script
-            [result, e] = testHelper.testrangeinsert(MyAssignment, RATINGS_TABLE, 100, 2, 3, conn, '2')
-            # [result, e] = testHelper.testrangeinsert(MyAssignment, RATINGS_TABLE, 100, 2, 0, conn, '0')
-            if result:
-                print("rangeinsert function pass!")
-            else:
-                print("rangeinsert function fail!")
+            # # ALERT:: Use only one at a time i.e. uncomment only one line at a time and run the script
+            # [result, e] = testHelper.testrangeinsert(MyAssignment, RATINGS_TABLE, 100, 2, 3, conn, '2')
+            # # [result, e] = testHelper.testrangeinsert(MyAssignment, RATINGS_TABLE, 100, 2, 0, conn, '0')
+            # if result:
+            #     print("rangeinsert function pass!")
+            # else:
+            #     print("rangeinsert function fail!")
 
-            testHelper.deleteAllPublicTables(conn)
-            MyAssignment.loadratings(RATINGS_TABLE, INPUT_FILE_PATH, conn)
+            # testHelper.deleteAllPublicTables(conn)
+            # MyAssignment.loadratings(RATINGS_TABLE, INPUT_FILE_PATH, conn)
 
-            [result, e] = testHelper.testroundrobinpartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
-            if result :
-                print("roundrobinpartition function pass!")
-            else:
-                print("roundrobinpartition function fail")
+            # [result, e] = testHelper.testroundrobinpartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
+            # if result :
+            #     print("roundrobinpartition function pass!")
+            # else:
+            #     print("roundrobinpartition function fail")
 
-            # ALERT:: Change the partition index according to your testing sequence.
-            [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '0')
-            # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '1')
-            # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '2')
-            if result :
-                print("roundrobininsert function pass!")
-            else:
-                print("roundrobininsert function fail!")
+            # # ALERT:: Change the partition index according to your testing sequence.
+            # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '0')
+            # # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '1')
+            # # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '2')
+            # if result :
+            #     print("roundrobininsert function pass!")
+            # else:
+            #     print("roundrobininsert function fail!")
 
             choice = input('Press enter to Delete all tables? ')
             if choice == '':
