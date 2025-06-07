@@ -2,6 +2,7 @@
 #
 # Interface for the assignement
 #
+import time
 
 import psycopg2
 
@@ -12,18 +13,24 @@ def getopenconnection(user='postgres', password='1234', dbname='postgres'):
     return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
 
 
-def loadratings(ratingstablename, ratingsfilepath, openconnection): 
+def loadratings(ratingstablename, ratingsfilepath, openconnection):
     """
     Function to load data in @ratingsfilepath file to a table called @ratingstablename.
     """
     create_db(DATABASE_NAME)
     con = openconnection
     cur = con.cursor()
+    start= time.time()
     cur.execute("create table " + ratingstablename + "(userid integer, extra1 char, movieid integer, extra2 char, rating float, extra3 char, timestamp bigint);")
     cur.copy_from(open(ratingsfilepath),ratingstablename,sep=':')
     cur.execute("alter table " + ratingstablename + " drop column extra1, drop column extra2, drop column extra3, drop column timestamp;")
+    # cur.execute(f"alter table {ratingstablename} add  primary key (movieid, userid);")
+
+
     cur.close()
     con.commit()
+    end= time.time()
+    print("load ratings: " + str(end-start))
 
 def rangepartition(ratingstablename, numberofpartitions, openconnection):
     """
@@ -31,6 +38,7 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
     """
     con = openconnection
     cur = con.cursor()
+    start = time.time()
     delta = 5 / numberofpartitions
     RANGE_TABLE_PREFIX = 'range_part'
     for i in range(0, numberofpartitions):
@@ -44,6 +52,8 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
             cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from " + ratingstablename + " where rating > " + str(minRange) + " and rating <= " + str(maxRange) + ";")
     cur.close()
     con.commit()
+    end= time.time()
+    print("range partition: " + str(end-start))
 
 def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     """
@@ -51,6 +61,7 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     """
     con = openconnection
     cur = con.cursor()
+    start = time.time()
     RROBIN_TABLE_PREFIX = 'rrobin_part'
     for i in range(0, numberofpartitions):
         table_name = RROBIN_TABLE_PREFIX + str(i)
@@ -58,7 +69,8 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
         cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from (select userid, movieid, rating, ROW_NUMBER() over() as rnum from " + ratingstablename + ") as temp where mod(temp.rnum-1, 5) = " + str(i) + ";")
     cur.close()
     con.commit()
-
+    end= time.time()
+    print("round robin partition: " + str(end-start))
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on round robin
@@ -66,9 +78,10 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     con = openconnection
     cur = con.cursor()
+    start = time.time()
     RROBIN_TABLE_PREFIX = 'rrobin_part'
     cur.execute("insert into " + ratingstablename + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
-    cur.execute("select count(*) from " + ratingstablename + ";");
+    cur.execute("select count(*) from " + ratingstablename + ";")
     total_rows = (cur.fetchall())[0][0]
     numberofpartitions = count_partitions(RROBIN_TABLE_PREFIX, openconnection)
     index = (total_rows-1) % numberofpartitions
@@ -76,13 +89,15 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
     cur.close()
     con.commit()
-
+    end= time.time()
+    print("round robin insert: " + str(end-start))
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on range rating.
     """
     con = openconnection
     cur = con.cursor()
+    start = time.time()
     RANGE_TABLE_PREFIX = 'range_part'
     numberofpartitions = count_partitions(RANGE_TABLE_PREFIX, openconnection)
     delta = 5 / numberofpartitions
@@ -93,6 +108,9 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
     cur.close()
     con.commit()
+    end= time.time()
+    print("range insert : " + str(end-start))
+
 
 def create_db(dbname):
     """
@@ -116,7 +134,6 @@ def create_db(dbname):
     # Clean up
     cur.close()
     con.close()
-
 def count_partitions(prefix, openconnection):
     """
     Function to count the number of tables which have the @prefix in their name somewhere.
@@ -126,5 +143,4 @@ def count_partitions(prefix, openconnection):
     cur.execute("select count(*) from pg_stat_user_tables where relname like " + "'" + prefix + "%';")
     count = cur.fetchone()[0]
     cur.close()
-
     return count
