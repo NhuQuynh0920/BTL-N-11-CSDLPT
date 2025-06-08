@@ -3,9 +3,45 @@
 # Interface for the assignement
 #
 
+from dotenv import load_dotenv
+import os
 import psycopg2
+import concurrent.futures
+import functools
+import time
 
-DATABASE_NAME = 'dds_assgn1'
+load_dotenv()
+
+DATABASE_NAME = os.getenv("DB_NAME")
+NUMBER_TABLE = int(os.getenv("NUMBER_TABLE"))
+
+def create_partition_process(partition_index, ratingstablename, numberofpartitions):
+        delta = NUMBER_TABLE / numberofpartitions
+        minRange = partition_index * delta
+        maxRange = minRange + delta
+        table_name = f"range_part{partition_index}"
+        print(table_name)
+        con = psycopg2.connect(database='dds_assgn1', user='postgres', password='1234', host='localhost', port='5432')
+        cur = con.cursor()
+
+        cur.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (userid INTEGER, movieid INTEGER, rating FLOAT);")
+
+        if partition_index == 0:
+            cur.execute(f"""
+                INSERT INTO {table_name}
+                SELECT userid, movieid, rating FROM {ratingstablename}
+                WHERE rating >= %s AND rating <= %s;
+            """, (minRange, maxRange))
+        else:
+            cur.execute(f"""
+                INSERT INTO {table_name}
+                SELECT userid, movieid, rating FROM {ratingstablename}
+                WHERE rating > %s AND rating <= %s;
+            """, (minRange, maxRange))
+
+        con.commit()
+        cur.close()
+        con.close()
 
 
 def getopenconnection(user='postgres', password='1234', dbname='postgres'):
@@ -13,9 +49,8 @@ def getopenconnection(user='postgres', password='1234', dbname='postgres'):
 
 
 def loadratings(ratingstablename, ratingsfilepath, openconnection): 
-    """
-    Function to load data in @ratingsfilepath file to a table called @ratingstablename.
-    """
+    start_time = time.time()
+    
     create_db(DATABASE_NAME)
     con = openconnection
     cur = con.cursor()
@@ -24,40 +59,18 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
     cur.execute("alter table " + ratingstablename + " drop column extra1, drop column extra2, drop column extra3, drop column timestamp;")
     cur.close()
     con.commit()
+    end_time = time.time()
+    print("Thời gian thực thi loadratings: {:.2f} giây".format(end_time - start_time))
 
 def rangepartition(ratingstablename, numberofpartitions, openconnection):
-    """
-    Function to create partitions of main table based on range of ratings.
-    """
-    con = openconnection
-    cur = con.cursor()
-    delta = 5 / numberofpartitions
-    RANGE_TABLE_PREFIX = 'range_part'
-    for i in range(0, numberofpartitions):
-        minRange = i * delta
-        maxRange = minRange + delta
-        table_name = RANGE_TABLE_PREFIX + str(i)
-        cur.execute("create table " + table_name + " (userid integer, movieid integer, rating float);")
-        if i == 0:
-            cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from " + ratingstablename + " where rating >= " + str(minRange) + " and rating <= " + str(maxRange) + ";")
-        else:
-            cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from " + ratingstablename + " where rating > " + str(minRange) + " and rating <= " + str(maxRange) + ";")
-    cur.close()
-    con.commit()
+    start_time = time.time()
 
-def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
-    """
-    Function to create partitions of main table using round robin approach.
-    """
-    con = openconnection
-    cur = con.cursor()
-    RROBIN_TABLE_PREFIX = 'rrobin_part'
-    for i in range(0, numberofpartitions):
-        table_name = RROBIN_TABLE_PREFIX + str(i)
-        cur.execute("create table " + table_name + " (userid integer, movieid integer, rating float);")
-        cur.execute("insert into " + table_name + " (userid, movieid, rating) select userid, movieid, rating from (select userid, movieid, rating, ROW_NUMBER() over() as rnum from " + ratingstablename + ") as temp where mod(temp.rnum-1, 5) = " + str(i) + ";")
-    cur.close()
-    con.commit()
+    func = functools.partial(create_partition_process, ratingstablename=ratingstablename, numberofpartitions=numberofpartitions)
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        executor.map(func, range(numberofpartitions))
+
+    end_time = time.time()
+    print("Thời gian thực thi rangepartition : {:.2f} giây".format(end_time - start_time))
 
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     """
@@ -95,8 +108,10 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     con.commit()
 
 def create_db(dbname):
+
     """
     We create a DB by connecting to the default user and database of Postgres
+
     The function first checks if an existing database exists for a given name, else creates it.
     :return:None
     """
@@ -119,6 +134,7 @@ def create_db(dbname):
 
 def count_partitions(prefix, openconnection):
     """
+
     Function to count the number of tables which have the @prefix in their name somewhere.
     """
     con = openconnection
