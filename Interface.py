@@ -70,7 +70,6 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
 
     temp_file = ratingsfilepath + ".clean"
     rows = [0]
-    print("tạo bảng xong")
     with open(ratingsfilepath, 'r') as infile, open(temp_file, 'w') as outfile:
         for line in infile:
             parts = line.strip().split(':')
@@ -78,14 +77,13 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
                 # Ghi đúng định dạng tab, không có ký tự thừa
                 outfile.write(f"{parts[0]}\t{parts[2]}\t{parts[4]}\n")
             rows[0] += 1
-    print("tiền xử lý xong")
     # Nạp vào database
     with open(temp_file, 'r') as f:
         cur.copy_from(f, ratingstablename, sep='\t', columns=('userid', 'movieid', 'rating'))
-    print("hhoaofso")
+    # tạo bảng info lưu số dòng của bảng ratings
     cur.execute("create table info (tablename varchar, numrow integer);")
     cur.execute(f"insert into info (tablename, numrow) values ('{ratingstablename}', {rows[0]});")
-    # Trigger cho INSERT
+    # Tạo trigger xử lí lệnh insert vào bảng ratings.
     cur.execute(f'''
         CREATE OR REPLACE FUNCTION update_row_count_func()
         RETURNS TRIGGER AS $$
@@ -143,6 +141,7 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     cur.execute(f'drop table {TEMP_TABLE};')
     con.commit()
     cur.close()
+
 ## round robin partition đa luồng
 # đoạn mã sử dụng 2 luồng để thực thi truy vấn
 # hàm nhận và thực thi câu lệnh sql từ hàng đợi
@@ -197,26 +196,48 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
 #     con.commit()
 #     cur.close()
 
-def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
+def count_partitions(prefix, openconnection):
     """
-    Function to insert a new row into the main table and specific partition based on round robin
-    approach.
+    Hàm thực hiện công việc đếm số lượng phân mảnh dựa vào tiền tố.
     """
     con = openconnection
     cur = con.cursor()
-    start = time.time()
+    cur.execute("select count(*) from pg_stat_user_tables where relname like " + "'" + prefix + "%';")
+    count = cur.fetchone()[0]
+    cur.close()
+    return count
+
+
+# hàm thực thi chèn dữ liệu
+def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
+    con = openconnection
+    cur = con.cursor()
     RROBIN_TABLE_PREFIX = 'rrobin_part'
-    cur.execute("insert into " + ratingstablename + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
+
+    # thực hiện lệnh chèn dữ liệu mới vào bảng ratings
+    cur.execute(f'''
+            INSERT INTO {ratingstablename} (userid, movieid, rating) 
+            VALUES ({userid}, {itemid}, {rating}); 
+        ''')
+
+    # thực hiện lấy ra số lượng của bảng ratings
     cur.execute(f"select numrow from info where tablename = '{ratingstablename}';")
     num_row = cur.fetchall()[0][0]
+
+    # thực hiện đếm số phân mảnh.
     num_partitions = count_partitions(RROBIN_TABLE_PREFIX, openconnection)
-    id = (num_row-1) % num_partitions
-    table_name = RROBIN_TABLE_PREFIX + str(id)
-    cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
+
+    # lấy ra chỉ số của phân mảnh cần chèn thêm dữ liệu
+    id = (num_row - 1) % num_partitions
+    table_name = RROBIN_TABLE_PREFIX + str(id)  # tên bảng = tiền tố + chỉ số
+    # thực hiện chèn dữ liệu mới vào phân mảnh.
+    cur.execute(f'''
+            INSERT INTO {table_name} (userid, movieid, rating) 
+            VALUES ({userid}, {itemid}, {rating}); 
+        ''')
     cur.close()
     con.commit()
-    end= time.time()
-    print("round robin insert: " + str(end-start))
+
 
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     """
