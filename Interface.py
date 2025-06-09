@@ -3,7 +3,6 @@
 # Interface for the assignement
 #
 
-from dotenv import load_dotenv
 import os
 import psycopg2
 import concurrent.futures
@@ -15,10 +14,8 @@ import queue
 import string
 import threading
 
-load_dotenv()
 
-DATABASE_NAME = os.getenv("DB_NAME")
-NUMBER_TABLE = int(os.getenv("NUMBER_TABLE"))
+DATABASE_NAME = 'dds_assgn1'
 
 def clean_data(file_path:string):
     data= []
@@ -72,8 +69,8 @@ def create_partition_process(partition_index, ratingstablename, numberofpartitio
         minRange = partition_index * delta
         maxRange = minRange + delta
         table_name = f"range_part{partition_index}"
-        print(table_name)
         con = psycopg2.connect(database='dds_assgn1', user='postgres', password='1234', host='localhost', port='5432')
+
         cur = con.cursor()
 
         cur.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (userid INTEGER, movieid INTEGER, rating FLOAT);")
@@ -100,16 +97,14 @@ def getopenconnection(user='postgres', password='1234', dbname='postgres'):
     return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
 
 
-def loadratings(ratingstablename, ratingsfilepath, openconnection): 
-    """
-    Function to load data in @ratingsfilepath file to a table called @ratingstablename.
-    """
+def loadratings(ratingstablename, ratingsfilepath, openconnection):
     start_time = time.time()
     con = openconnection
     cur = con.cursor()
 
+    # Xóa bảng cũ nếu có
     cur.execute(f"DROP TABLE IF EXISTS {ratingstablename};")
-    #Create unlogged table
+    # Tạo bảng UNLOGGED TABLE
     cur.execute(f"""
         CREATE UNLOGGED TABLE {ratingstablename} (
             userid INTEGER,
@@ -119,11 +114,15 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
     """)
     con.commit()
 
-    # Prehandling using awk
     temp_file = ratingsfilepath + ".clean"
-    os.system(f"""awk -F: '{{print $1 "\\t" $3 "\\t" $5}}' "{ratingsfilepath}" > "{temp_file}" """)
+    with open(ratingsfilepath, 'r') as infile, open(temp_file, 'w') as outfile:
+        for line in infile:
+            parts = line.strip().split(':')
+            if len(parts) >= 5:
+                # Ghi đúng định dạng tab, không có ký tự thừa
+                outfile.write(f"{parts[0]}\t{parts[2]}\t{parts[4]}\n")
 
-    # Load into DB
+    # Nạp vào database
     with open(temp_file, 'r') as f:
         cur.copy_from(f, ratingstablename, sep='\t', columns=('userid', 'movieid', 'rating'))
     
@@ -133,21 +132,21 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
     cur.execute(f"insert into info (tablename, numrow) values ('{ratingstablename}', {rows[0]});")
     # Trigger cho INSERT
     cur.execute(f'''
-            CREATE OR REPLACE FUNCTION update_row_count_func()
-            RETURNS TRIGGER AS $$
-            BEGIN
-                UPDATE info SET numrow = numrow + 1 WHERE tablename = '{ratingstablename}';
-
-                RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
+        CREATE OR REPLACE FUNCTION update_row_count_func()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            UPDATE info SET numrow = numrow + 1 WHERE tablename = '{ratingstablename}';
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
     ''')
     cur.execute(f"""
-                    CREATE TRIGGER ratings_after_insert
-                    AFTER INSERT ON {ratingstablename}
-                    FOR EACH ROW
-                    EXECUTE FUNCTION update_row_count_func();
-                """)
+        CREATE TRIGGER ratings_after_insert
+        AFTER INSERT ON {ratingstablename}
+        FOR EACH ROW
+        EXECUTE FUNCTION update_row_count_func();
+    """)
+
     
     con.commit()
     cur.close()
@@ -212,11 +211,11 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     end = time.time()
     print("runtime: " + str(end - start) + " giây")
 
-
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on round robin
     approach.
+
     """
     con = openconnection
     cur = con.cursor()
@@ -233,20 +232,11 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     con.commit()
     end= time.time()
     print("round robin insert: " + str(end-start))
-    RROBIN_TABLE_PREFIX = 'rrobin_part'
-    cur.execute("insert into " + ratingstablename + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
-    cur.execute("select count(*) from " + ratingstablename + ";");
-    total_rows = (cur.fetchall())[0][0]
-    numberofpartitions = count_partitions(RROBIN_TABLE_PREFIX, openconnection)
-    index = (total_rows-1) % numberofpartitions
-    table_name = RROBIN_TABLE_PREFIX + str(index)
-    cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
-    cur.close()
-    con.commit()
 
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on range rating.
+
     """
     con = openconnection
     cur = con.cursor()
@@ -263,10 +253,11 @@ def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
 
 def create_db(dbname):
     """
-    We create a DB by connecting to the default user and database of Postgres
 
+    We create a DB by connecting to the default user and database of Postgres
     The function first checks if an existing database exists for a given name, else creates it.
     :return:None
+
     """
     # Connect to the default database
     con = getopenconnection(dbname='postgres')
@@ -286,6 +277,9 @@ def create_db(dbname):
     con.close()
 
 def count_partitions(prefix, openconnection):
+    """
+    Function to count the number of tables which have the @prefix in their name somewhere.
+    """
     con = openconnection
     cur = con.cursor()
     cur.execute("select count(*) from pg_stat_user_tables where relname like " + "'" + prefix + "%';")

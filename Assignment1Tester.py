@@ -12,17 +12,15 @@ RATING_COLNAME = 'rating'
 INPUT_FILE_PATH = 'ratings.dat'
 ACTUAL_ROWS_IN_INPUT_FILE = 10000054  # Number of lines in the input file
 
-from dotenv import load_dotenv
 import os
 import psycopg2
 import traceback
 import testHelper
 import Interface as MyAssignment
 
-load_dotenv()
 
-DATABASE_NAME = os.getenv("DB_NAME")
-NUMBER_TABLE = int(os.getenv("NUMBER_TABLE"))
+DATABASE_NAME = 'dds_assgn1'
+NUMBER_TABLE = 5
 
 if __name__ == '__main__':
     try:
@@ -38,7 +36,6 @@ if __name__ == '__main__':
                 print("loadratings function pass!")
             else:
                 print("loadratings function fail!")
-            
             [result, e] = testHelper.testrangepartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
             if result :
                 print("rangepartition function pass!")
@@ -51,6 +48,7 @@ if __name__ == '__main__':
                 print("rangeinsert function pass!")
             else:
                 print("rangeinsert function fail!")
+            
             testHelper.deleteAllPublicTables(conn)
             MyAssignment.loadratings(RATINGS_TABLE, INPUT_FILE_PATH, conn)
             
@@ -64,10 +62,12 @@ if __name__ == '__main__':
             [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '0')
             # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '1')
             # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '2')
+
             if result :
                 print("roundrobininsert function pass!")
             else:
                 print("roundrobininsert function fail!")
+
 
             choice = input('Press enter to Delete all tables? ')
             if choice == '':
