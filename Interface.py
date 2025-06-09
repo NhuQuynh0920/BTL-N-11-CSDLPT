@@ -17,52 +17,6 @@ import threading
 
 DATABASE_NAME = 'dds_assgn1'
 
-def clean_data(file_path:string):
-    data= []
-    with open (file_path,'r') as f:
-        for line in f:
-            try:
-                val = line.split(':')
-                result = f'{val[0]},{val[2]},{val[4]}'
-                data.append(result)
-            except:
-                print('clean data error')
-    return '\n'.join(data)
-def reader(q:queue ,file_path:string, rows:list):
-    data = []
-    with open (file_path,'r') as f:
-        for line in f:
-            try:
-                val = line.split(':')
-                result = f'{val[0]},{val[2]},{val[4]}'
-                data.append(result)
-                if len(data) >=1000000:
-                    rows[0] += len(data)
-                    q.put('\n'.join(data))
-                    data = []
-            except:
-                print('clean data error')
-    rows[0] += len(data)
-    q.put('\n'.join(data))
-
-    for _ in range(4):
-        q.put(None)
-def writer(q:queue, table_name):
-    id=0
-    con = getopenconnection(dbname=DATABASE_NAME)
-    while True:
-        data = q.get()
-        if data is None:
-            break
-        cur = con.cursor()
-        start = time.time()
-        input = io.StringIO(data)
-        cur.copy_from(input, table_name, sep=',')
-        cur.close()
-        con.commit()
-        end = time.time()
-        id = id + 1
-    con.close()
 
 def create_partition_process(partition_index, ratingstablename, numberofpartitions):
         delta = 5 / numberofpartitions
@@ -115,19 +69,20 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
     con.commit()
 
     temp_file = ratingsfilepath + ".clean"
+    rows = [0]
+    print("tạo bảng xong")
     with open(ratingsfilepath, 'r') as infile, open(temp_file, 'w') as outfile:
         for line in infile:
             parts = line.strip().split(':')
             if len(parts) >= 5:
                 # Ghi đúng định dạng tab, không có ký tự thừa
                 outfile.write(f"{parts[0]}\t{parts[2]}\t{parts[4]}\n")
-
+            rows[0] += 1
+    print("tiền xử lý xong")
     # Nạp vào database
     with open(temp_file, 'r') as f:
         cur.copy_from(f, ratingstablename, sep='\t', columns=('userid', 'movieid', 'rating'))
-    
-    #them phan cua Dai
-    rows = [0]
+    print("hhoaofso")
     cur.execute("create table info (tablename varchar, numrow integer);")
     cur.execute(f"insert into info (tablename, numrow) values ('{ratingstablename}', {rows[0]});")
     # Trigger cho INSERT
@@ -146,8 +101,6 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
         FOR EACH ROW
         EXECUTE FUNCTION update_row_count_func();
     """)
-
-    
     con.commit()
     cur.close()
     os.remove(temp_file)
@@ -166,56 +119,88 @@ def rangepartition(ratingstablename, numberofpartitions, openconnection):
 
     end_time = time.time()
     print("Thời gian thực thi rangepartition : {:.2f} giây".format(end_time - start_time))
-    
+# round robin theo đơn luồng
 def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
-    """
-    Hàm để tạo các partition của bảng chính bằng phương pháp round-robin sử dụng luồng.
-    """
     con = openconnection
     cur = con.cursor()
-    start = time.time()
+
     RROBIN_TABLE_PREFIX = 'rrobin_part'
-    TEMP_TABLE = 'temp_ratings'
-    cur.execute(
-        f'CREATE UNLOGGED TABLE {TEMP_TABLE} AS SELECT *, ROW_NUMBER() OVER() - 1 AS stt FROM {ratingstablename};')
-    con.commit()
-    # đa luồng
-    # sql_list = queue.Queue(maxsize=10)
-    # for i in range(numberofpartitions):
-    #     table_name = RROBIN_TABLE_PREFIX + str(i)
-    #     sql= f'''
-    #     CREATE TABLE {table_name} AS
-    #     SELECT userid, movieid, rating FROM {TEMP_TABLE}
-    #     WHERE MOD(stt, {numberofpartitions}) = {i};
-    #     '''
-    #     sql_list.put(sql)
-    # for i in range(5):
-    #     sql_list.put(None)
-    # threads =  []
-    # for t in range(5):
-    #     t = threading.Thread(target=rrobin_execute_query, args=(sql_list,))
-    #     t.start()
-    #     threads.append(t)
-    # for t in threads:
-    #     t.join()
-    # đơn luồng
-    for i in range (numberofpartitions):
+    # tạo bảng tạm
+    TEMP_TABLE = 'temp'
+    cur.execute(f'''
+        CREATE UNLOGGED TABLE {TEMP_TABLE} AS 
+        SELECT *, ROW_NUMBER() OVER() - 1 AS stt FROM {ratingstablename};
+    ''')
+    # thực hiện các truy vấn tạo phân mảnh.
+    for i in range(numberofpartitions):
         table_name = RROBIN_TABLE_PREFIX + str(i)
         cur.execute(f'''
             CREATE TABLE {table_name} AS
             SELECT userid, movieid, rating FROM {TEMP_TABLE}
             WHERE MOD(stt, {numberofpartitions}) = {i};
         ''')
+    # xóa bảng tạm
+    cur.execute(f'drop table {TEMP_TABLE};')
     con.commit()
     cur.close()
-    end = time.time()
-    print("runtime: " + str(end - start) + " giây")
+## round robin partition đa luồng
+# đoạn mã sử dụng 2 luồng để thực thi truy vấn
+# hàm nhận và thực thi câu lệnh sql từ hàng đợi
+# def rrobin_execute_query(sql_list: queue):
+#     con = getopenconnection(dbname=DATABASE_NAME)
+#     while True:
+#         sql = sql_list.get() # lấy lệnh sql từ hàng đợi
+#         """
+#         Nếu lấy được giá trị None (tín hiệu báo hết truy vấn) từ hàng đợi thì thoát khỏi vòng lặp, đóng kết nối.
+#         """
+#         if sql is None:
+#             break
+#         cur = con.cursor()
+#         cur.execute(sql)
+#         con.commit()
+#         cur.close()
+#     con.close()
+# def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
+#     con = openconnection
+#     cur = con.cursor()
+#     RROBIN_TABLE_PREFIX = 'rrobin_part'
+#     TEMP_TABLE = 'temp_ratings'
+#     NUM_THREADS = 2
+#     cur.execute(f'''
+#         CREATE UNLOGGED TABLE {TEMP_TABLE} AS
+#         SELECT *, ROW_NUMBER() OVER() - 1 AS stt FROM {ratingstablename};
+#     ''')
+#     con.commit()
+#     sql_list = queue.Queue()
+#     # tạo các câu truy vấn và đẩy vào hàng đợi.
+#     for i in range(numberofpartitions):
+#         table_name = RROBIN_TABLE_PREFIX + str(i)
+#         sql= f'''
+#         CREATE TABLE {table_name} AS
+#         SELECT userid, movieid, rating FROM {TEMP_TABLE}
+#         WHERE MOD(stt, {numberofpartitions}) = {i};
+#         '''
+#         sql_list.put(sql)
+#     # đặt None là tín hiệu hết truy vấn.
+#     for i in range(NUM_THREADS):
+#         sql_list.put(None)
+#     threads =  []
+#     for t in range(NUM_THREADS):
+#         # tạo luồng để thực thi hàm rrobin_execute_query và truyền vào hàng đợi chứa lệnh sql
+#         t = threading.Thread(target=rrobin_execute_query, args=(sql_list,))
+#         t.start() # thực thi luồng
+#         threads.append(t)
+#     # chờ các luồng thực hiện xong
+#     for t in threads:
+#         t.join()
+#     cur.execute(f'drop table {TEMP_TABLE};') # xóa bảng tạm
+#     con.commit()
+#     cur.close()
 
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on round robin
     approach.
-
     """
     con = openconnection
     cur = con.cursor()
@@ -236,7 +221,6 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on range rating.
-
     """
     con = openconnection
     cur = con.cursor()
@@ -287,3 +271,4 @@ def count_partitions(prefix, openconnection):
     cur.close()
 
     return count
+

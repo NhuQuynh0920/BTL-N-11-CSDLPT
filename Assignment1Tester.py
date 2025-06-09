@@ -10,7 +10,7 @@ USER_ID_COLNAME = 'userid'
 MOVIE_ID_COLNAME = 'movieid'
 RATING_COLNAME = 'rating'
 INPUT_FILE_PATH = 'ratings.dat'
-ACTUAL_ROWS_IN_INPUT_FILE = 10000054  # Number of lines in the input file
+ACTUAL_ROWS_IN_INPUT_FILE = 44 # Number of lines in the input file
 
 import os
 import psycopg2
@@ -59,7 +59,7 @@ if __name__ == '__main__':
                 print("roundrobinpartition function fail")
 
             # ALERT:: Change the partition index according to your testing sequence.
-            [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '0')
+            [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 71555, 1, 3, conn, '4')
             # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '1')
             # [result, e] = testHelper.testroundrobininsert(MyAssignment, RATINGS_TABLE, 100, 1, 3, conn, '2')
 
