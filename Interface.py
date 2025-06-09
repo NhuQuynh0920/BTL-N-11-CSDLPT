@@ -102,7 +102,6 @@ def getopenconnection(user='postgres', password='1234', dbname='postgres'):
 
 def loadratings(ratingstablename, ratingsfilepath, openconnection): 
     """
-
     Function to load data in @ratingsfilepath file to a table called @ratingstablename.
     """
     start_time = time.time()
@@ -152,12 +151,21 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
     con.commit()
     cur.close()
     os.remove(temp_file)
+    start_time = time.time()
+    
+    create_db(DATABASE_NAME)
+    con = openconnection
+    cur = con.cursor()
+    cur.execute("create table " + ratingstablename + "(userid integer, extra1 char, movieid integer, extra2 char, rating float, extra3 char, timestamp bigint);")
+    cur.copy_from(open(ratingsfilepath),ratingstablename,sep=':')
+    cur.execute("alter table " + ratingstablename + " drop column extra1, drop column extra2, drop column extra3, drop column timestamp;")
+    cur.close()
+    con.commit()
     end_time = time.time()
     print("Thời gian thực thi loadratings: {:.2f} giây".format(end_time - start_time))
 
 def rangepartition(ratingstablename, numberofpartitions, openconnection):
     """
-
     Chạy phân mảnh theo range một cách song song (mỗi tiến trình có kết nối riêng).
     """
     start_time = time.time()
@@ -213,6 +221,7 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
     end = time.time()
     print("runtime: " + str(end - start) + " giây")
 
+
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     """
     Function to insert a new row into the main table and specific partition based on round robin
@@ -233,6 +242,16 @@ def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
     con.commit()
     end= time.time()
     print("round robin insert: " + str(end-start))
+    RROBIN_TABLE_PREFIX = 'rrobin_part'
+    cur.execute("insert into " + ratingstablename + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
+    cur.execute("select count(*) from " + ratingstablename + ";");
+    total_rows = (cur.fetchall())[0][0]
+    numberofpartitions = count_partitions(RROBIN_TABLE_PREFIX, openconnection)
+    index = (total_rows-1) % numberofpartitions
+    table_name = RROBIN_TABLE_PREFIX + str(index)
+    cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
+    cur.close()
+    con.commit()
 
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
     """
@@ -276,10 +295,6 @@ def create_db(dbname):
     con.close()
 
 def count_partitions(prefix, openconnection):
-    """
-    Function to count the number of tables which have the @prefix in their name somewhere.
-
-    """
     con = openconnection
     cur = con.cursor()
     cur.execute("select count(*) from pg_stat_user_tables where relname like " + "'" + prefix + "%';")
