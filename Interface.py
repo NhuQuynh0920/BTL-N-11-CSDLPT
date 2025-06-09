@@ -137,6 +137,7 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
             RETURNS TRIGGER AS $$
             BEGIN
                 UPDATE info SET numrow = numrow + 1 WHERE tablename = '{ratingstablename}';
+
                 RETURN NEW;
             END;
             $$ LANGUAGE plpgsql;
@@ -151,16 +152,6 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
     con.commit()
     cur.close()
     os.remove(temp_file)
-    start_time = time.time()
-    
-    create_db(DATABASE_NAME)
-    con = openconnection
-    cur = con.cursor()
-    cur.execute("create table " + ratingstablename + "(userid integer, extra1 char, movieid integer, extra2 char, rating float, extra3 char, timestamp bigint);")
-    cur.copy_from(open(ratingsfilepath),ratingstablename,sep=':')
-    cur.execute("alter table " + ratingstablename + " drop column extra1, drop column extra2, drop column extra3, drop column timestamp;")
-    cur.close()
-    con.commit()
     end_time = time.time()
     print("Thời gian thực thi loadratings: {:.2f} giây".format(end_time - start_time))
 
