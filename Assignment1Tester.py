@@ -38,13 +38,8 @@ if __name__ == '__main__':
                 print("loadratings function pass!")
             else:
                 print("loadratings function fail!")
-<<<<<<< HEAD
             
             [result, e] = testHelper.testrangepartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
-=======
-
-            [result, e] = testHelper.testrangepartition(MyAssignment, RATINGS_TABLE, NUMBER_TABLE, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
->>>>>>> d2b59fe66001121b032f02f7ff274eef79199d8f
             if result :
                 print("rangepartition function pass!")
             else:
@@ -56,16 +51,9 @@ if __name__ == '__main__':
                 print("rangeinsert function pass!")
             else:
                 print("rangeinsert function fail!")
-<<<<<<< HEAD
             testHelper.deleteAllPublicTables(conn)
             MyAssignment.loadratings(RATINGS_TABLE, INPUT_FILE_PATH, conn)
             
-=======
-            '''
-            testHelper.deleteAllPublicTables(conn)
-            MyAssignment.loadratings(RATINGS_TABLE, INPUT_FILE_PATH, conn)
-
->>>>>>> d2b59fe66001121b032f02f7ff274eef79199d8f
             [result, e] = testHelper.testroundrobinpartition(MyAssignment, RATINGS_TABLE, 5, conn, 0, ACTUAL_ROWS_IN_INPUT_FILE)
             if result :
                 print("roundrobinpartition function pass!")
@@ -80,12 +68,7 @@ if __name__ == '__main__':
                 print("roundrobininsert function pass!")
             else:
                 print("roundrobininsert function fail!")
-<<<<<<< HEAD
-                
-=======
-            '''
 
->>>>>>> d2b59fe66001121b032f02f7ff274eef79199d8f
             choice = input('Press enter to Delete all tables? ')
             if choice == '':
                 testHelper.deleteAllPublicTables(conn)
