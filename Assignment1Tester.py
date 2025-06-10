@@ -12,7 +12,6 @@ RATING_COLNAME = 'rating'
 INPUT_FILE_PATH = 'ratings.dat'
 ACTUAL_ROWS_IN_INPUT_FILE = 44 # Number of lines in the input file
 
-import os
 import psycopg2
 import traceback
 import testHelper

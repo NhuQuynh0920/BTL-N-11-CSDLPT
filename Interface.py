@@ -56,9 +56,8 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
     con = openconnection
     cur = con.cursor()
 
-    # Xóa bảng cũ nếu có
     cur.execute(f"DROP TABLE IF EXISTS {ratingstablename};")
-    # Tạo bảng UNLOGGED TABLE
+
     cur.execute(f"""
         CREATE UNLOGGED TABLE {ratingstablename} (
             userid INTEGER,
@@ -70,27 +69,35 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
 
     temp_file = ratingsfilepath + ".clean"
     rows = [0]
-    print("tạo bảng xong")
     with open(ratingsfilepath, 'r') as infile, open(temp_file, 'w') as outfile:
         for line in infile:
             parts = line.strip().split(':')
             if len(parts) >= 5:
-                # Ghi đúng định dạng tab, không có ký tự thừa
                 outfile.write(f"{parts[0]}\t{parts[2]}\t{parts[4]}\n")
-            rows[0] += 1
-    print("tiền xử lý xong")
-    # Nạp vào database
+            rows[0]+=1
+    # Load into DB
     with open(temp_file, 'r') as f:
         cur.copy_from(f, ratingstablename, sep='\t', columns=('userid', 'movieid', 'rating'))
-    print("hhoaofso")
+    end_time = time.time()
+    con.commit()
+
+    print("Thời gian thực thi loadratings: {:.2f} giây".format(end_time - start_time))
+
+    # add logged to table for rollback if crash
+    cur.execute(f"ALTER TABLE {ratingstablename} SET LOGGED;")
+
+    # prepare for roundrobin insert
+
     cur.execute("create table info (tablename varchar, numrow integer);")
     cur.execute(f"insert into info (tablename, numrow) values ('{ratingstablename}', {rows[0]});")
+
     # Trigger cho INSERT
     cur.execute(f'''
         CREATE OR REPLACE FUNCTION update_row_count_func()
         RETURNS TRIGGER AS $$
         BEGIN
             UPDATE info SET numrow = numrow + 1 WHERE tablename = '{ratingstablename}';
+
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
@@ -101,12 +108,10 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
         FOR EACH ROW
         EXECUTE FUNCTION update_row_count_func();
     """)
+
     con.commit()
     cur.close()
     os.remove(temp_file)
-    end_time = time.time()
-    print("Thời gian thực thi loadratings: {:.2f} giây".format(end_time - start_time))
-
 def rangepartition(ratingstablename, numberofpartitions, openconnection):
     """
     Chạy phân mảnh theo range một cách song song (mỗi tiến trình có kết nối riêng).
