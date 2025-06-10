@@ -96,8 +96,11 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
         CREATE OR REPLACE FUNCTION update_row_count_func()
         RETURNS TRIGGER AS $$
         BEGIN
-            UPDATE info SET numrow = numrow + 1 WHERE tablename = '{ratingstablename}';
-
+            IF TG_OP = 'INSERT' THEN
+                UPDATE info SET numrow = numrow + 1 WHERE tablename = '{ratingstablename}';
+            ELSIF TG_OP = 'DELETE' THEN
+                UPDATE info SET numrow = numrow - 1 WHERE tablename = '{ratingstablename}';
+            END IF;
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
