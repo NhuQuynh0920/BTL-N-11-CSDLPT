@@ -1,20 +1,13 @@
 # BTL BTL-NH-M-11-
 
-- cấu trúc thư mục
-├── .idea/
+### cấu trúc thư mục
 
-├── __pycache__/
-
-├── .gitignore
-
-├── Assignment1Tester.py  // file main  
-
-├── Báo cáo BTL-CSDLPT.pdf  // file báo cáo 
-
-├── Interface.py  // file chứa các hàm xử lý
-
-├── README.md
-
-├── testHelper.py
-
-└── Đề bài 1.pdf // đề bài
+├── .idea/ </br>
+├── __pycache__/</br>
+├── .gitignore</br>
+├── Assignment1Tester.py  // file main </br>
+├── Báo cáo BTL-CSDLPT.pdf  // file báo cáo</br>
+├── Interface.py  // file chứa các hàm xử lý</br>
+├── README.md</br>
+├── testHelper.py</br>
+└── Đề bài 1.pdf // đề bài</br>
