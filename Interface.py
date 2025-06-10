@@ -90,8 +90,9 @@ def loadratings(ratingstablename, ratingsfilepath, openconnection):
 
     cur.execute("create table info (tablename varchar, numrow integer);")
     cur.execute(f"insert into info (tablename, numrow) values ('{ratingstablename}', {rows[0]});")
-
-    # Trigger cho INSERT
+    '''
+    Tạo trigger đễ cập nhật số dòng của bảng ratings khi thực hiện insert hoặc delete
+    '''
     cur.execute(f'''
         CREATE OR REPLACE FUNCTION update_row_count_func()
         RETURNS TRIGGER AS $$
@@ -205,41 +206,63 @@ def roundrobinpartition(ratingstablename, numberofpartitions, openconnection):
 #     con.commit()
 #     cur.close()
 
+# hàm thực thi chèn dữ liệu theo round robin
 def roundrobininsert(ratingstablename, userid, itemid, rating, openconnection):
-    """
-    Function to insert a new row into the main table and specific partition based on round robin
-    approach.
-    """
     con = openconnection
     cur = con.cursor()
-    start = time.time()
     RROBIN_TABLE_PREFIX = 'rrobin_part'
-    cur.execute("insert into " + ratingstablename + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
+
+    # thực hiện lệnh chèn dữ liệu mới vào bảng ratings
+    cur.execute(f'''
+            INSERT INTO {ratingstablename} (userid, movieid, rating) 
+            VALUES ({userid}, {itemid}, {rating}); 
+        ''')
+
+    # thực hiện lấy ra số lượng của bảng ratings
     cur.execute(f"select numrow from info where tablename = '{ratingstablename}';")
     num_row = cur.fetchall()[0][0]
+
+    # thực hiện đếm số phân mảnh.
     num_partitions = count_partitions(RROBIN_TABLE_PREFIX, openconnection)
-    id = (num_row-1) % num_partitions
-    table_name = RROBIN_TABLE_PREFIX + str(id)
-    cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
+
+    # lấy ra chỉ số của phân mảnh cần chèn thêm dữ liệu
+    id = (num_row - 1) % num_partitions
+    table_name = RROBIN_TABLE_PREFIX + str(id)  # tên bảng = tiền tố + chỉ số
+
+    # thực hiện chèn dữ liệu mới vào phân mảnh.
+    cur.execute(f'''
+            INSERT INTO {table_name} (userid, movieid, rating) 
+            VALUES ({userid}, {itemid}, {rating}); 
+        ''')
     cur.close()
     con.commit()
-    end= time.time()
-    print("round robin insert: " + str(end-start))
 
+
+# Hàm thực thi chèn dữ liệu theo phương pháp range
 def rangeinsert(ratingstablename, userid, itemid, rating, openconnection):
-    """
-    Function to insert a new row into the main table and specific partition based on range rating.
-    """
     con = openconnection
     cur = con.cursor()
     RANGE_TABLE_PREFIX = 'range_part'
-    numberofpartitions = count_partitions(RANGE_TABLE_PREFIX, openconnection)
-    delta = 5 / numberofpartitions
+
+    # Thực hiện lệnh chèn dữ liệu mới vào bảng ratings
+    cur.execute(f"INSERT INTO {ratingstablename} (userid, movieid, rating) VALUES (%s, %s, %s)",
+                ( userid, itemid, rating))
+
+    # Thực hiện đếm số phân mảnh
+    num_partitions = count_partitions(RANGE_TABLE_PREFIX, openconnection)
+
+    # Lấy ra chỉ số của phân mảnh cần chèn thêm dữ liệu
+    delta = 5.0 / num_partitions
     index = int(rating / delta)
-    if rating % delta == 0 and index != 0:
-        index = index - 1
+    if rating % delta == 0 and index > 0:
+        index -= 1
+    if index >= num_partitions:
+        index = num_partitions - 1
     table_name = RANGE_TABLE_PREFIX + str(index)
-    cur.execute("insert into " + table_name + "(userid, movieid, rating) values (" + str(userid) + "," + str(itemid) + "," + str(rating) + ");")
+    # Thực hiện chèn dữ liệu mới vào phân mảnh
+    cur.execute(f"INSERT INTO {table_name} (userid, movieid, rating) VALUES (%s, %s, %s)",
+                ( userid, itemid, rating))
+
     cur.close()
     con.commit()
 
@@ -279,4 +302,18 @@ def count_partitions(prefix, openconnection):
     cur.close()
 
     return count
+
+
+def count_partitions(prefix, openconnection):
+    """
+    Hàm thực hiện công việc đếm số lượng phân mảnh dựa vào tiền tố.
+    """
+    con = openconnection
+    cur = con.cursor()
+    cur.execute("SELECT COUNT(*) FROM pg_stat_user_tables WHERE relname LIKE %s", (prefix + '%',))
+    count = cur.fetchone()[0]
+    cur.close()
+    return count
+
+
 
